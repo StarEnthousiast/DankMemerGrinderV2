@@ -286,7 +286,7 @@ def get_config():
     try:
         with open("config.json", "r") as config_file:
             return json.load(config_file)
-    except:
+    except FileNotFoundError:
         configs = {"global": global_config_example}
         for i in range(1, 6):
             configs[str(i)] = config_example
