@@ -18,10 +18,6 @@ class Adventure(commands.Cog):
             with open("config.json", "w") as file:
                 json.dump(config_dict, file, ensure_ascii=False, indent=4)
         self.adventure = adventure_config["adventure"]
-        adventure_box = getattr(
-            self.bot.window.ui, f"adventure_box_{self.bot.account_id}"
-        )
-        adventure_box.setCurrentIndex(adventure_box.findText(self.adventure))
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):

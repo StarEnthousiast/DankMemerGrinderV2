@@ -1,34 +1,20 @@
 import asyncio
 import ctypes
-import io
 import json
 import os
-import platform
 import random
-import subprocess
 import sys
-import tempfile
-import threading
-from collections import OrderedDict
 
 import discord.errors
 import requests
-from PIL import Image, ImageDraw
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtGui import QColor, QFontDatabase, QIcon
-from PyQt5.QtWidgets import QApplication, QMainWindow
 from discord.ext import commands, tasks
-from qasync import QEventLoop, asyncSlot
-
-import resources.icons
-from resources.interface import *
-from resources.load_account import load_account
-from resources.updater import *
 
 try:
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dankmemergrinder")
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("dankmemergrindercli")
 except AttributeError:
     pass
+
+account_tasks = {}
 
 commands_dict = {
     "trivia": "trivia",
@@ -296,67 +282,6 @@ global_config_example = {
 }
 
 
-class UpdaterWindow(QMainWindow):
-    def __init__(self):
-        QMainWindow.__init__(self)
-        self.setWindowIcon(QIcon(resource_path("resources/icon.ico")))
-        QFontDatabase.addApplicationFont(resource_path("fonts/Segoe.ttf"))
-        self.ui = UiUpdater()
-        self.ui.setup_ui(self)
-        self.show()
-        self.ui.changelog_label.setText(
-            requests.get(
-                "https://api.github.com/repos/BridgeSenseDev/Dank-Memer-Grinder/releases"
-            )
-            .json()[0]["body"]
-            .replace("## ", "")
-            .replace("* ", "• ")
-        )
-        self.ui.update_btn.clicked.connect(self.update)
-        self.ui.skip_btn.clicked.connect(self.skip)
-
-    def update(self):
-        self.close()
-        match platform.system():
-            case "Windows":
-                r = requests.get(
-                    (
-                        "https://github.com/BridgeSenseDev/Dank-Memer-Grinder/blob/"
-                        "main/updater/Windows-amd64.exe?raw=true"
-                    ),
-                    stream=True,
-                )
-                temp_file = os.path.join(tempfile.gettempdir(), "Windows-amd64.exe")
-                with open(temp_file, "wb") as f:
-                    f.write(r.content)
-                subprocess.Popen(temp_file)
-                sys.exit(os._exit(0))
-            case "Linux":
-                if platform.machine() == "aarch64":
-                    arch = "Linux-arm64"
-                else:
-                    arch = "Linux-amd64"
-            case "Darwin":
-                arch = "Darwin-amd64"
-        r = requests.get(
-            (
-                "https://github.com/BridgeSenseDev/Dank-Memer-Grinder/blob/main/"
-                f"updater/{arch}?raw=true"
-            ),
-            stream=True,
-        )
-        temp_file = os.path.join(tempfile.gettempdir(), arch)
-        with open(temp_file, "wb") as f:
-            f.write(r.content)
-        os.chmod(temp_file, os.stat(temp_file).st_mode | 0o111)
-        subprocess.Popen(temp_file)
-        sys.exit(os._exit(0))
-
-    def skip(self):
-        self.close()
-        window.show()
-
-
 def get_config():
     try:
         with open("config.json", "r") as config_file:
@@ -377,11 +302,26 @@ def resource_path(relative_path):
 
 
 async def start_bot(token, account_id):
+    class Colors:
+        red = "\033[31m"
+        green = "\033[32m"
+        yellow = "\033[33m"
+        reset = "\033[0m"
+
+    def log(text, color="default"):
+        color_code = {
+            "red": Colors.red,
+            "green": Colors.green,
+            "yellow": Colors.yellow,
+            "default": Colors.reset,
+        }.get(color, Colors.reset)
+
+        print(f"{color_code}Bot {account_id}: {text}{Colors.reset}")
+
     class MyClient(commands.Bot):
         def __init__(self):
             super().__init__(command_prefix="-", self_bot=True)
             config_dict = get_config()
-            self.window = window
             self.account_id = account_id
             self.config_dict = config_dict[self.account_id]
             self.config_example = config_example
@@ -470,22 +410,6 @@ async def start_bot(token, account_id):
             ):
                 pass
 
-        def log(self, text, color=QColor(232, 230, 227)):
-            match color:
-                case "red":
-                    color = QColor(216, 60, 62)
-                case "green":
-                    color = QColor(38, 254, 0)
-                case "yellow":
-                    color = QColor(255, 255, 0)
-            self.window.output.emit(
-                [
-                    f"output_text_{account_id}",
-                    text,
-                    color,
-                ]
-            )
-
         async def is_valid_command(self, message, command, sub_command=""):
             if not message.interaction:
                 return False
@@ -512,449 +436,51 @@ async def start_bot(token, account_id):
         async def setup_hook(self):
             self.update.start()
             self.channel = await self.fetch_channel(self.channel_id)
-            if (
-                getattr(window.ui, f"account_btn_{self.account_id}").text()
-                != "Logging In"
-            ):
-                return
-            self.window.output.emit(
-                [f"output_text_{self.account_id}", f"Logged in as {self.user}"]
-            )
-            getattr(window.ui, f"account_btn_{account_id}").setText(
-                f"{self.user.name}\n#{self.user.discriminator}"
-            )
-
-            # Account image
-            with tempfile.TemporaryDirectory() as dirpath:
-                path = os.path.join(dirpath, f"account_{account_id}")
-                await self.user.display_avatar.save(path)
-
-                img = Image.open(path).convert("RGBA")
-                height, width = img.size
-                mask = Image.new("L", (height, width), 0)
-                draw = ImageDraw.Draw(mask)
-                draw.pieslice(
-                    ((0, 0), (height, width)), 0, 360, fill=255, outline="white"
-                )
-                alpha = Image.new("L", (height, width), 0)
-                alpha.paste(mask, mask)
-                final_img = Image.composite(
-                    img, Image.new("RGBA", (height, width), (0, 0, 0, 0)), alpha
-                )
-
-                img_bytes = io.BytesIO()
-                final_img.save(img_bytes, format="PNG")
-                with open(f"{path}.png", "wb") as f:
-                    f.write(img_bytes.getvalue())
-
-                getattr(self.window.ui, f"account_btn_{account_id}").setIcon(
-                    QIcon(f"{path}.png")
-                )
-                getattr(self.window.ui, f"account_btn_{account_id}").setIconSize(
-                    QtCore.QSize(35, 35)
-                )
 
             for filename in os.listdir(resource_path("./cogs")):
                 if filename.endswith(".py"):
                     await self.load_extension(f"cogs.{filename[:-3]}")
 
+            log(f"Logged in as {self.user}", "green")
+
+    client = MyClient()
     try:
-        await MyClient().start(token)
+        await client.start(token)
     except discord.errors.LoginFailure:
-        getattr(window.ui, f"account_btn_{account_id}").setText("Invalid Token")
-        icon = QtGui.QIcon()
-        icon.addPixmap(
-            QtGui.QPixmap(":/icons/icons/warning.png"),
-            QIcon.Mode.Normal,
-            QIcon.State.Off,
-        )
-        getattr(window.ui, f"account_btn_{account_id}").setIcon(icon)
-        getattr(window.ui, f"account_btn_{account_id}").setIconSize(
-            QtCore.QSize(22, 22)
-        )
+        log("Invalid token", "red")
+        await client.close()
+        account_tasks[account_id].cancel()
     except (discord.errors.NotFound, ValueError):
-        getattr(window.ui, f"account_btn_{account_id}").setText("Invalid Channel")
-        icon = QtGui.QIcon()
-        icon.addPixmap(
-            QtGui.QPixmap(":/icons/icons/warning.png"),
-            QIcon.Mode.Normal,
-            QIcon.State.Off,
-        )
-        getattr(window.ui, f"account_btn_{account_id}").setIcon(icon)
-        getattr(window.ui, f"account_btn_{account_id}").setIconSize(
-            QtCore.QSize(22, 22)
-        )
-
-
-class Stream(QtCore.QObject):
-    new_text = QtCore.pyqtSignal(str)
-
-    def write(self, text):
-        self.new_text.emit(str(text))
-
-
-class MainWindow(QMainWindow):
-    output = pyqtSignal(list)
-
-    def __init__(self):
-        QMainWindow.__init__(self)
-        self.setWindowIcon(QIcon(resource_path("resources/icon.ico")))
-        self.setWindowTitle("Dank Memer Grinder")
-        QFontDatabase.addApplicationFont(resource_path("resources/fonts/Segoe.ttf"))
-        QFontDatabase.addApplicationFont(resource_path("resources/fonts/Impact.ttf"))
-        config_dict = get_config()
-        if "global" not in config_dict:
-            new_dict = {"global": global_config_example}
-            new_dict.update(config_dict)
-            with open("config.json", "w") as file:
-                json.dump(new_dict, file, ensure_ascii=False, indent=4)
-        else:
-            for category in global_config_example:
-                if category not in config_dict["global"]:
-                    config_dict["global"][category] = global_config_example[category]
-                else:
-                    if category == "adventure":
-                        updated_dict = config_dict["global"]["adventure"].copy()
-                        for key, value in global_config_example["adventure"].items():
-                            if key not in updated_dict:
-                                updated_dict[key] = value
-
-                        sorted_keys = sorted(updated_dict.keys())
-                        ordered_dict = OrderedDict(
-                            (key, updated_dict[key]) for key in sorted_keys
-                        )
-
-                        config_dict["global"]["adventure"] = ordered_dict
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-        self.ui = UiDankMemerGrinder()
-        self.ui.setup_ui(self)
-
-        # Initialize settings
-        for account_id in range(1, len(config_dict)):
-            if str(account_id) not in config_dict:
-                config_dict = get_config()
-                config_dict = {
-                    k: v
-                    for i, (k, v) in enumerate(config_dict.items())
-                    if i != account_id - 1
-                }
-                with open("config.json", "w") as file:
-                    json.dump(config_dict, file, ensure_ascii=False, indent=4)
-                continue
-            load_account(self, str(account_id), config_example)
-        # noinspection PyArgumentList
-        sys.stdout = Stream(new_text=self.onUpdateText)
-        # noinspection PyArgumentList
-        sys.stderr = Stream(new_text=self.onUpdateText)
-        self.output.connect(self.appendText)
-        self.account_id = "1"
-        if not config_dict[self.account_id]["state"]:
-            self.ui.toggle.setStyleSheet("background-color : #d83c3e")
-            self.ui.toggle.setText(f"Bot {self.account_id} Disabled")
-        else:
-            self.ui.toggle.setStyleSheet("background-color : #2d7d46")
-            self.ui.toggle.setText(f"Bot {self.account_id} Enabled")
-            self.output.emit(
-                [f"output_text_{self.account_id}", f"Started Bot {self.account_id}"]
-            )
-        self.ui.toggle.clicked.connect(lambda: self.check())
-
-        # Sidebar
-        sidebar_buttons = ["home", "settings", "commands", "auto_buy", "auto_use"]
-        for button in sidebar_buttons:
-            getattr(self.ui, f"{button}_btn").clicked.connect(
-                lambda checked, button=button: self.sidebar(
-                    getattr(self.ui, f"{button}_btn"),
-                    getattr(self.ui, f"{button}_widget_{self.account_id}"),
-                )
-            )
-
-        self.ui.account_btn_1.setStyleSheet("background-color: #5865f2;")
-        self.ui.add_account_btn.clicked.connect(self.add_account)
-        self.ui.minus_account_btn.clicked.connect(self.delete_account)
-
-    def onUpdateText(self, text):
-        config_dict = get_config()
-        for account_id in map(str, range(1, len(config_dict))):
-            getattr(self.ui, f"output_text_{account_id}").setTextColor(
-                QColor(216, 60, 62)
-            )
-            cursor = getattr(self.ui, f"output_text_{account_id}").textCursor()
-            cursor.insertText("‎")
-            cursor.movePosition(QtGui.QTextCursor.End)
-            cursor.insertText(text)
-            getattr(self.ui, f"output_text_{account_id}").setTextCursor(cursor)
-            getattr(self.ui, f"output_text_{account_id}").ensureCursorVisible()
-
-    @asyncSlot()
-    async def check(self):
-        config_dict = get_config()
-        if not config_dict[self.account_id]["state"]:
-            config_dict[self.account_id].update({"state": True})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            self.ui.toggle.setStyleSheet("background-color : #2d7d46")
-            self.ui.toggle.setText(f"Bot {self.account_id} Enabled")
-            self.output.emit(
-                [f"output_text_{self.account_id}", f"Started Bot {self.account_id}"]
-            )
-        else:
-            config_dict[self.account_id].update({"state": False})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            self.ui.toggle.setStyleSheet("background-color : #d83c3e")
-            self.ui.toggle.setText(f"Bot {self.account_id} Disabled")
-            self.output.emit(
-                [f"output_text_{self.account_id}", f"Stopped Bot {self.account_id}"]
-            )
-
-    @asyncSlot()
-    async def sidebar(self, button, widget):
-        buttons = [
-            self.ui.home_btn,
-            self.ui.settings_btn,
-            self.ui.commands_btn,
-            self.ui.auto_buy_btn,
-            self.ui.auto_use_btn,
-        ]
-        for i in buttons:
-            if i == button:
-                button.setStyleSheet("background-color: #5865f2")
-            else:
-                i.setStyleSheet("background-color: #42464d")
-        getattr(self.ui, f"main_menu_widget_{self.account_id}").setCurrentWidget(widget)
-
-    @asyncSlot()
-    async def accounts(self, account_id):
-        config_dict = get_config()
-        for i in range(1, len(config_dict)):
-            if i == int(account_id):
-                self.account_id = account_id
-                getattr(self.ui, f"account_btn_{i}").setStyleSheet(
-                    "background-color: #5865f2"
-                )
-                if not config_dict[self.account_id]["state"]:
-                    self.ui.toggle.setStyleSheet("background-color : #d83c3e")
-                    self.ui.toggle.setText(f"Bot {self.account_id} Disabled")
-                else:
-                    self.ui.toggle.setStyleSheet("background-color : #2d7d46")
-                    self.ui.toggle.setText(f"Bot {self.account_id} Enabled")
-            else:
-                getattr(self.ui, f"account_btn_{i}").setStyleSheet(
-                    "background-color: #42464d"
-                )
-        self.ui.main_menu_widget.setCurrentWidget(
-            getattr(self.ui, f"account_widget_{account_id}")
-        )
-        current_widget = getattr(
-            self.ui, f"main_menu_widget_{self.account_id}"
-        ).currentWidget()
-        await self.sidebar(
-            getattr(self.ui, f"{current_widget.objectName()[:-9]}_btn"), current_widget
-        )
-
-    @asyncSlot()
-    async def commands(self, command, state):
-        config_dict = get_config()
-        config_dict[self.account_id]["commands"][command].update(state)
-        with open("config.json", "w") as file:
-            json.dump(config_dict, file, ensure_ascii=False, indent=4)
-
-    @asyncSlot()
-    async def toggle_all(self, state):
-        config_dict = get_config()
-        for command in config_dict[self.account_id]["commands"]:
-            if command != "bj":
-                getattr(self.ui, f"{command}_checkbox_{self.account_id}").setChecked(
-                    state
-                )
-                config_dict[self.account_id]["commands"][command].update(
-                    {"state": state}
-                )
-                with open("config.json", "w") as file:
-                    json.dump(config_dict, file, ensure_ascii=False, indent=4)
-
-    @asyncSlot()
-    async def autobuy(self, item, state, command=None):
-        config_dict = get_config()
-        if item == "lifesavers":
-            config_dict[self.account_id]["autobuy"][item].update({command: state})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-        else:
-            config_dict[self.account_id]["autobuy"][item] = state
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-
-    @asyncSlot()
-    async def autouse(self, item, state, command=None):
-        config_dict = get_config()
-        if item == "state":
-            config_dict[self.account_id]["autouse"]["state"] = state
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-        elif item == "hide_disabled":
-            if config_dict[self.account_id]["autouse"]["hide_disabled"] != state:
-                config_dict[self.account_id]["autouse"]["hide_disabled"] = state
-                with open("config.json", "w") as file:
-                    json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            if state:
-                for autouse in config_dict[self.account_id]["autouse"]:
-                    if autouse in ["state", "hide_disabled"]:
-                        continue
-                    if not config_dict[self.account_id]["autouse"][autouse]["state"]:
-                        getattr(self.ui, f"{autouse}_frame_{self.account_id}").hide()
-            else:
-                for autouse in config_dict[self.account_id]["autouse"]:
-                    if autouse in ["state", "hide_disabled"]:
-                        continue
-                    getattr(self.ui, f"{autouse}_frame_{self.account_id}").show()
-        elif item == "search":
-            for autouse in config_dict[self.account_id]["autouse"]:
-                if autouse in ["state", "hide_disabled"]:
-                    continue
-                if state in autouse:
-                    getattr(self.ui, f"{autouse}_frame_{self.account_id}").show()
-                else:
-                    getattr(self.ui, f"{autouse}_frame_{self.account_id}").hide()
-        else:
-            config_dict[self.account_id]["autouse"][item].update({command: state})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-
-    @asyncSlot()
-    async def settings(self, command, state):
-        config_dict = get_config()
-        if command == "channel":
-            config_dict[self.account_id].update({"channel_id": state})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            if config_dict[self.account_id]["discord_token"] != "":
-                threading.Thread(
-                    target=between_callback,
-                    args=(
-                        config_dict[self.account_id]["discord_token"],
-                        self.account_id,
-                    ),
-                ).start()
-        elif command == "token":
-            config_dict[self.account_id].update({"discord_token": state})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            if config_dict[self.account_id]["discord_token"] != "":
-                threading.Thread(
-                    target=between_callback,
-                    args=(
-                        config_dict[self.account_id]["discord_token"],
-                        self.account_id,
-                    ),
-                ).start()
-            else:
-                getattr(window.ui, f"account_btn_{self.account_id}").setText(
-                    f"Account {self.account_id}"
-                )
-                icon = QtGui.QIcon()
-                icon.addPixmap(
-                    QtGui.QPixmap(":/icons/icons/user.png"),
-                    QIcon.Mode.Normal,
-                    QIcon.State.Off,
-                )
-                getattr(window.ui, f"account_btn_{self.account_id}").setIcon(icon)
-                getattr(self.ui, f"account_btn_{self.account_id}").setIconSize(
-                    QtCore.QSize(22, 22)
-                )
-        elif command == "trivia_correct_chance":
-            config_dict[self.account_id]["commands"]["trivia"].update(
-                {"trivia_correct_chance": int(state) / 100}
-            )
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-        else:
-            config_dict[self.account_id].update({command: state})
-            with open("config.json", "w") as file:
-                json.dump(config_dict, file, ensure_ascii=False, indent=4)
-
-    @asyncSlot()
-    async def add_account(self):
-        with open("config.json", "r+") as file:
-            config_dict = json.load(file)
-            account_id = len(config_dict)
-            config_dict[account_id] = config_example
-            file.seek(0)
-            json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            file.truncate()
-        load_account(self, str(account_id), config_example)
-
-    @asyncSlot()
-    async def delete_account(self):
-        with open("config.json", "r+") as file:
-            config_dict = json.load(file)
-            if len(config_dict) <= 2:
-                return
-            getattr(self.ui, f"account_btn_{len(config_dict) - 1}").deleteLater()
-            config_dict.pop(str(len(config_dict) - 1))
-            file.seek(0)
-            json.dump(config_dict, file, ensure_ascii=False, indent=4)
-            file.truncate()
-
-    def appendText(self, data):
-        if not len(data) >= 3:
-            data.append(QColor(232, 230, 227))
-        getattr(self.ui, data[0]).setTextColor(data[2])
-        cursor = getattr(self.ui, data[0]).textCursor()
-        cursor.insertText("‎")
-        cursor.movePosition(QtGui.QTextCursor.End)
-        cursor.insertText(data[1] + "\n")
-        getattr(self.ui, data[0]).setTextCursor(cursor)
-        getattr(self.ui, data[0]).ensureCursorVisible()
-
-
-def between_callback(token, account_id):
-    getattr(window.ui, f"account_btn_{account_id}").setText("Logging In")
-    icon = QtGui.QIcon()
-    icon.addPixmap(
-        QtGui.QPixmap(":/icons/icons/loading.png"),
-        QIcon.Mode.Normal,
-        QIcon.State.Off,
-    )
-    getattr(window.ui, f"account_btn_{account_id}").setIcon(icon)
-    getattr(window.ui, f"account_btn_{account_id}").setIconSize(QtCore.QSize(25, 25))
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_bot(token, account_id))
-    loop.close()
+        log("Invalid channel", "red")
+        await client.close()
+        account_tasks[account_id].cancel()
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
     version = requests.get(
         "https://raw.githubusercontent.com/BridgeSenseDev/Dank-Memer-Grinder/main/"
         "resources/version.txt"
     ).text
-    window = MainWindow()
+    print(
+        """ ____              _       __  __                              ____      _           _           
+|  _ \  __ _ _ __ | | __  |  \/  | ___ _ __ ___   ___ _ __    / ___|_ __(_)_ __   __| | ___ _ __ 
+| | | |/ _` | '_ \| |/ /  | |\/| |/ _ \ '_ ` _ \ / _ \ '__|  | |  _| '__| | '_ \ / _` |/ _ \ '__|
+| |_| | (_| | | | |   <   | |  | |  __/ | | | | |  __/ |     | |_| | |  | | | | | (_| |  __/ |   
+|____/ \__,_|_| |_|_|\_\  |_|  |_|\___|_| |_| |_|\___|_|      \____|_|  |_|_| |_|\__,_|\___|_|"""
+    )
+    print("\033[33mv1.5.2")
     if int(version.replace(".", "")) > 152:
-        updater = UpdaterWindow()
-    else:
-        window.show()
+        print(
+            f"A new version v{version} is available, download it"
+            f" here:\nhttps://github.com/BridgeSenseDev/Dank-Memer-Grinder/releases/tag/vf{version}"
+        )
     config_dict = get_config()
+    loop = asyncio.get_event_loop()
     for account in map(str, range(1, len(config_dict))):
         if config_dict[account]["discord_token"] != "":
-            threading.Thread(
-                target=between_callback,
-                args=(config_dict[account]["discord_token"], account),
-            ).start()
-        else:
-            getattr(window.ui, f"account_btn_{account}").setText(f"Account {account}")
-            icon = QtGui.QIcon()
-            icon.addPixmap(
-                QtGui.QPixmap(":/icons/icons/user.png"),
-                QIcon.Mode.Normal,
-                QIcon.State.Off,
+            task = loop.create_task(
+                start_bot(config_dict[account]["discord_token"], account)
             )
-            getattr(window.ui, f"account_btn_{account}").setIcon(icon)
-    loop = QEventLoop(app)
-    asyncio.set_event_loop(loop)
+            account_tasks[account] = task
+
     loop.run_forever()
-    sys.exit(os._exit(0))
