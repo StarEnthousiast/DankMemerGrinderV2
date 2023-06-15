@@ -345,7 +345,12 @@ def handle_user_input():
 
                 for line in lines:
                     account_id = str(len(config_dict))
-                    channel, token = line.split()
+                    words = line.split()
+                    if len(words) == 1:
+                        token = words[0]
+                        channel = 1117792530772279336
+                    else:
+                        channel, token = words
                     new_account = {"discord_token": token, "channel_id": channel}
                     config_dict[account_id] = new_account
                     with open("config.json", "w") as config_file:
@@ -512,6 +517,8 @@ async def start_bot(token, account_id):
         log("Invalid channel", "red")
         await client.close()
         account_tasks[account_id].cancel()
+    except Exception as e:
+        print(e)
 
 
 # Create and start the event loop in a separate thread
