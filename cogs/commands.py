@@ -27,8 +27,8 @@ class Commands(commands.Cog):
         for command in shuffled_commands:
             if (
                 time.time() - self.bot.last_ran[command]
-                < self.bot.config_dict["commands"][command]["delay"]
-                or not self.bot.config_dict["commands"][command]["state"]
+                < self.bot.global_config_dict["commands"][command]["delay"]
+                or not self.bot.global_config_dict["commands"][command]["state"]
             ):
                 await asyncio.sleep(0.1)
                 continue

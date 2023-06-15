@@ -16,7 +16,9 @@ class Autobuy(commands.Cog):
                 try:
                     if (
                         embed["title"] == "Your lifesaver protected you!"
-                        and self.bot.config_dict["autobuy"]["lifesavers"]["state"]
+                        and self.bot.global_config_dict["autobuy"]["lifesavers"][
+                            "state"
+                        ]
                     ):
                         remaining = int(
                             re.search(
@@ -25,7 +27,9 @@ class Autobuy(commands.Cog):
                             ).group(1)
                         )
                         required = int(
-                            self.bot.config_dict["autobuy"]["lifesavers"]["amount"]
+                            self.bot.global_config_dict["autobuy"]["lifesavers"][
+                                "amount"
+                            ]
                         )
                         if remaining < required:
                             channel = await message.author.create_dm()
@@ -53,7 +57,9 @@ class Autobuy(commands.Cog):
                 try:
                     if (
                         embed["title"] == "Pending Confirmation"
-                        and self.bot.config_dict["autobuy"]["lifesavers"]["state"]
+                        and self.bot.global_config_dict["autobuy"]["lifesavers"][
+                            "state"
+                        ]
                     ):
                         await self.bot.click(message, 0, 1)
                 except KeyError:
@@ -69,7 +75,7 @@ class Autobuy(commands.Cog):
                 if (
                     "You don't have a shovel, you need to go buy one."
                     in embed["description"]
-                    and self.bot.config_dict["autobuy"]["shovel"]
+                    and self.bot.global_config_dict["autobuy"]["shovel"]
                 ):
                     await self.bot.send("withdraw", amount="35k")
                     await self.bot.sub_send("shop", "buy", item="Shovel", quantity="1")
@@ -85,7 +91,7 @@ class Autobuy(commands.Cog):
                 if (
                     "You don't have a fishing pole, you need to go buy one"
                     in embed["description"]
-                    and self.bot.config_dict["autobuy"]["fishing"]
+                    and self.bot.global_config_dict["autobuy"]["fishing"]
                 ):
                     await self.bot.send("withdraw", amount="35k")
                     await self.bot.sub_send(
@@ -103,7 +109,7 @@ class Autobuy(commands.Cog):
                 if (
                     "You don't have a hunting rifle, you need to go buy one."
                     in embed["description"]
-                    and self.bot.config_dict["autobuy"]["rifle"]
+                    and self.bot.global_config_dict["autobuy"]["rifle"]
                 ):
                     await self.bot.send("withdraw", amount="35k")
                     await self.bot.sub_send(

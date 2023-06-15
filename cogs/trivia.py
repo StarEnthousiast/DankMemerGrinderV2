@@ -23,7 +23,7 @@ with open(resource_path("resources/trivia.json")) as file:
 class Trivia(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.chance = self.bot.config_dict["commands"]["trivia"][
+        self.chance = self.bot.global_config_dict["commands"]["trivia"][
             "trivia_correct_chance"
         ]
 

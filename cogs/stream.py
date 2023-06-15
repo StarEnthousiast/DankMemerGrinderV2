@@ -10,7 +10,7 @@ class Stream(commands.Cog):
         self.bot = bot
         with open("config.json", "r") as config_file:
             config_dict = json.load(config_file)
-        stream_config = config_dict[self.bot.account_id]["commands"]["stream"]
+        stream_config = config_dict["global"]["commands"]["stream"]
         if "order" not in stream_config:
             stream_config["order"] = self.bot.config_example["commands"]["stream"][
                 "order"

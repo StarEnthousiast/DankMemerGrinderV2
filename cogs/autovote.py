@@ -19,7 +19,7 @@ class Vote(commands.Cog):
         if (
             time.time() - self.bot.last_ran["auto_vote"] < 43200
             or not self.bot.state
-            or not self.bot.config_dict["auto_vote"]
+            or not self.bot.global_config_dict["auto_vote"]
         ):
             return
 
@@ -28,7 +28,7 @@ class Vote(commands.Cog):
 
         response = requests.post(
             "https://discord.com/api/v10/oauth2/authorize?client_id=477949690848083968&response_type=code&scope=identify",
-            headers={"authorization": self.bot.config_dict["discord_token"]},
+            headers={"authorization": self.bot.global_config_dict["discord_token"]},
             json={"authorize": True, "permissions": 0},
         )
         code = json.loads(response.content.decode())["location"].split("code=")[-1]

@@ -10,7 +10,7 @@ class Adventure(commands.Cog):
         self.last_ran = {}
         with open("config.json", "r") as config_file:
             config_dict = json.load(config_file)
-        adventure_config = config_dict[self.bot.account_id]["commands"]["adventure"]
+        adventure_config = config_dict["global"]["commands"]["adventure"]
         if "adventure" not in adventure_config:
             adventure_config["adventure"] = self.bot.config_example["commands"][
                 "adventure"

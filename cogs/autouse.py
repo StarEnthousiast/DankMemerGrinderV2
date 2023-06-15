@@ -17,14 +17,14 @@ class Autouse(commands.Cog):
             await asyncio.sleep(1)
             return
 
-        for autouse in self.bot.config_dict["autouse"]:
+        for autouse in self.bot.global_config_dict["autouse"]:
             if autouse in ["state", "hide_disabled"]:
                 continue
 
             if autouse not in self.last_ran:
                 if (
-                    self.bot.config_dict["autouse"]["state"]
-                    and self.bot.config_dict["autouse"][autouse]["state"]
+                    self.bot.global_config_dict["autouse"]["state"]
+                    and self.bot.global_config_dict["autouse"][autouse]["state"]
                 ):
                     user = await self.bot.fetch_user(270904126974590976)
                     channel = await user.create_dm()
@@ -44,8 +44,8 @@ class Autouse(commands.Cog):
 
             if (
                 time.time() - self.last_ran[autouse] < 1800
-                or not self.bot.config_dict["autouse"]["state"]
-                or not self.bot.config_dict["autouse"][autouse]["state"]
+                or not self.bot.global_config_dict["autouse"]["state"]
+                or not self.bot.global_config_dict["autouse"][autouse]["state"]
             ):
                 await asyncio.sleep(5)
                 continue
@@ -72,11 +72,13 @@ class Autouse(commands.Cog):
                 # Buy lifesavers
                 try:
                     if embed["title"] == "Item Expiration":
-                        for autouse in self.bot.config_dict["autouse"]:
+                        for autouse in self.bot.global_config_dict["autouse"]:
                             if (
                                 autouse.replace("_", " ")
                                 in embed["description"].lower()
-                                and self.bot.config_dict["autouse"][autouse]["state"]
+                                and self.bot.global_config_dict["autouse"][autouse][
+                                    "state"
+                                ]
                             ):
                                 channel = await message.author.create_dm()
                                 await self.bot.send(

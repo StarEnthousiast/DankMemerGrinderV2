@@ -9,7 +9,7 @@ class Crime(commands.Cog):
         self.bot = bot
         with open("config.json", "r") as config_file:
             config_dict = json.load(config_file)
-        crime_config = config_dict[self.bot.account_id]["commands"]["crime"]
+        crime_config = config_dict["global"]["commands"]["crime"]
         if "priority" not in crime_config:
             crime_config["priority"] = self.bot.config_example["commands"]["crime"][
                 "priority"

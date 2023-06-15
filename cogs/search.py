@@ -9,7 +9,7 @@ class Search(commands.Cog):
         self.bot = bot
         with open("config.json", "r") as config_file:
             config_dict = json.load(config_file)
-        search_config = config_dict[self.bot.account_id]["commands"]["search"]
+        search_config = config_dict["global"]["commands"]["search"]
         if "priority" not in search_config:
             search_config["priority"] = self.bot.config_example["commands"]["search"][
                 "priority"

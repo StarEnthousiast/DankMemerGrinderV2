@@ -4,6 +4,8 @@ import json
 import os
 import random
 import sys
+import threading
+from datetime import datetime
 
 import discord.errors
 import requests
@@ -301,13 +303,68 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 
-async def start_bot(token, account_id):
-    class Colors:
-        red = "\033[31m"
-        green = "\033[32m"
-        yellow = "\033[33m"
-        reset = "\033[0m"
+class Colors:
+    red = "\033[31m"
+    green = "\033[32m"
+    yellow = "\033[33m"
+    orange = "\033[93m"
+    reset = "\033[0m"
 
+
+def custom_print(message, time=True):
+    if not time:
+        print(f"\r{message}", end="\n> ")
+    else:
+        print(f'\r[{datetime.now().strftime("%H:%M:%S")}] {message}', end="\n> ")
+
+
+def handle_user_input():
+    while True:
+        user_input = input().encode("utf-8", errors="ignore").decode("utf-8")
+
+        if user_input == "help":
+            custom_print(
+                f"{Colors.orange}load_batch:{Colors.reset} Loads accounts from"
+                " batch.txt"
+            )
+
+        elif user_input == "load_batch":
+            try:
+                with open("batch.txt") as batch_file:
+                    lines = batch_file.read().splitlines()
+                    custom_print(
+                        (
+                            f"{Colors.yellow}Adding {len(lines)} accounts from batch"
+                            f" file{Colors.reset}"
+                        ),
+                        False,
+                    )
+
+                with open("config.json", "r") as config_file:
+                    config_dict = json.load(config_file)
+
+                for line in lines:
+                    account_id = str(len(config_dict))
+                    channel, token = line.split()
+                    new_account = {"discord_token": token, "channel_id": channel}
+                    config_dict[account_id] = new_account
+                    with open("config.json", "w") as config_file:
+                        json.dump(config_dict, config_file, indent=4)
+
+                    future = asyncio.run_coroutine_threadsafe(
+                        start_bot(token, account_id), loop
+                    )
+
+            except FileNotFoundError:
+                custom_print(f"{Colors.red}Error: batch.txt is missing{Colors.reset}")
+        else:
+            custom_print(
+                f'{Colors.red}Unknown command. Type "help" for a list of'
+                f" commands{Colors.reset}"
+            )
+
+
+async def start_bot(token, account_id):
     def log(text, color="default"):
         color_code = {
             "red": Colors.red,
@@ -316,21 +373,21 @@ async def start_bot(token, account_id):
             "default": Colors.reset,
         }.get(color, Colors.reset)
 
-        print(f"{color_code}Bot {account_id}: {text}{Colors.reset}")
+        custom_print(f"{color_code}Bot {account_id}: {text}{Colors.reset}")
 
     class MyClient(commands.Bot):
         def __init__(self):
             super().__init__(command_prefix="-", self_bot=True)
             config_dict = get_config()
             self.account_id = account_id
+            self.global_config_dict = config_dict["global"]
             self.config_dict = config_dict[self.account_id]
             self.config_example = config_example
-            self.state = self.config_dict["state"]
+            self.state = self.global_config_dict["state"]
             self.channel_id = int(config_dict[account_id]["channel_id"])
             self.channel = None
             self.commands_dict = commands_dict
             self.last_ran = {}
-            self.global_config_dict = config_dict["global"]
             for command in self.commands_dict:
                 self.last_ran[command] = 0
 
@@ -340,8 +397,9 @@ async def start_bot(token, account_id):
                 if str(self.account_id) not in json.load(config_file):
                     sys.exit()
                 config_file.seek(0)
+                self.global_config_dict = json.load(config_file)["global"]
                 self.config_dict = json.load(config_file)[self.account_id]
-                self.state = self.config_dict["state"]
+                self.state = self.global_config_dict["state"]
                 if self.config_dict["channel_id"] != str(self.channel_id):
                     sys.exit()
 
@@ -428,7 +486,7 @@ async def start_bot(token, account_id):
                 and self.state
                 and message.interaction.name
                 == f"{commands_dict[command]} {sub_command}".rstrip()
-                and self.config_dict["commands"][command]["state"]
+                and self.global_config_dict["commands"][command]["state"]
                 and message.interaction.user == self.user
                 and not message.flags.ephemeral
             )
@@ -456,31 +514,52 @@ async def start_bot(token, account_id):
         account_tasks[account_id].cancel()
 
 
-if __name__ == "__main__":
-    version = requests.get(
-        "https://raw.githubusercontent.com/BridgeSenseDev/Dank-Memer-Grinder/main/"
-        "resources/version.txt"
-    ).text
-    print(
-        """ ____              _       __  __                              ____      _           _           
-|  _ \  __ _ _ __ | | __  |  \/  | ___ _ __ ___   ___ _ __    / ___|_ __(_)_ __   __| | ___ _ __ 
-| | | |/ _` | '_ \| |/ /  | |\/| |/ _ \ '_ ` _ \ / _ \ '__|  | |  _| '__| | '_ \ / _` |/ _ \ '__|
-| |_| | (_| | | | |   <   | |  | |  __/ | | | | |  __/ |     | |_| | |  | | | | | (_| |  __/ |   
-|____/ \__,_|_| |_|_|\_\  |_|  |_|\___|_| |_| |_|\___|_|      \____|_|  |_|_| |_|\__,_|\___|_|"""
-    )
-    print("\033[33mv1.5.2")
-    if int(version.replace(".", "")) > 152:
-        print(
-            f"A new version v{version} is available, download it"
-            f" here:\nhttps://github.com/BridgeSenseDev/Dank-Memer-Grinder/releases/tag/vf{version}"
-        )
-    config_dict = get_config()
-    loop = asyncio.get_event_loop()
-    for account in map(str, range(1, len(config_dict))):
-        if config_dict[account]["discord_token"] != "":
-            task = loop.create_task(
-                start_bot(config_dict[account]["discord_token"], account)
-            )
-            account_tasks[account] = task
+# Create and start the event loop in a separate thread
+def start_event_loop(event_loop):
+    asyncio.set_event_loop(event_loop)
+    event_loop.run_forever()
 
-    loop.run_forever()
+
+loop = asyncio.new_event_loop()
+t = threading.Thread(target=start_event_loop, args=(loop,))
+t.start()
+
+if __name__ == "__main__":
+    # Start the user_input_thread
+    user_input_thread = threading.Thread(target=handle_user_input)
+    user_input_thread.start()
+
+    # Fetch version information
+    version_url = "https://raw.githubusercontent.com/BridgeSenseDev/Dank-Memer-Grinder/main/resources/version.txt"
+    version = requests.get(version_url).text
+
+    # Print header and version information
+    header = """
+____              _       __  __                              ____      _           _
+|  _ \  __ _ _ __ | | __  |  \/  | ___ _ __ ___   ___ _ __    / ___|_ __(_)_ __   __| | ___ _ __
+| | | |/ _` | '_ \| |/ /  | |\/| |/ _ \ '_ ` _ \ / _ \ '__|  | |  _| '__| | '_ \ / _` |/ _ \ '__|
+| |_| | (_| | | | |   <   | |  | |  __/ | | | | |  __/ |     | |_| | |  | | | | | (_| |  __/ |
+|____/ \__,_|_| |_|_|\_\  |_|  |_|\___|_| |_| |_|\___|_|      \____|_|  |_|_| |_|\__,_|\___|_|
+    """
+    custom_print(header, False)
+    custom_print("\033[33mv1.5.2", False)
+    custom_print('\033[33mType "help" for a list of commands', False)
+
+    # Check for updates
+    if int(version.replace(".", "")) > 152:
+        update_url = f"https://github.com/BridgeSenseDev/Dank-Memer-Grinder/releases/tag/vf{version}"
+        custom_print(
+            f"A new version v{version} is available, download it here:\n{update_url}"
+        )
+
+    # Read configuration and start bots
+    config_dict = get_config()
+    if len(config_dict) > 1:
+        for account in map(str, range(1, len(config_dict))):
+            token = config_dict[account]["discord_token"]
+            if token != "":
+                future = asyncio.run_coroutine_threadsafe(
+                    start_bot(token, account), loop
+                )
+
+    t.join()

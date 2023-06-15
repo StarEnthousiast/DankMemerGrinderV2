@@ -23,7 +23,7 @@ class Others(commands.Cog):
                 if (
                     "You have an unread alert!" in embed["title"]
                     and f"<@{self.bot.user.id}>" in message.content
-                    and self.bot.config_dict["alerts"]
+                    and self.bot.global_config_dict["alerts"]
                 ):
                     await self.bot.send("alert")
             except KeyError:
@@ -34,14 +34,14 @@ class Others(commands.Cog):
         if not self.bot.state:
             return
         if (
-            self.bot.config_dict["offline"]
+            self.bot.global_config_dict["offline"]
             and self.bot.status != discord.Status.invisible
         ):
             await self.bot.change_presence(
                 status=discord.Status.invisible, activity=self.bot.activity
             )
         elif (
-            not self.bot.config_dict["offline"]
+            not self.bot.global_config_dict["offline"]
             and self.bot.status == discord.Status.invisible
         ):
             await self.bot.change_presence(
